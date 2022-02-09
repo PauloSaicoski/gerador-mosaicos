@@ -267,7 +267,7 @@ if __name__ == "__main__":
 
     for i in range(len(mosaicos)):
         x = datetime.datetime.now()
-        caminho = f'./fotos/{x.strftime("%d%m%Y-%H:%M:%S")}-{i}'
+        caminho = f'./fotos/{x.strftime("%d%m%Y_%H%M%S")}_{i}'
         os.makedirs(caminho)
         cv2.imwrite(caminho+"/mosaico.png", mosaicos[i])
         texto = []
