@@ -1,20 +1,18 @@
-#!/usr/bin/env python3
-import datetime
 import sys
 import cv2
 import numpy as np
-import os
 import math
 
-MIN_MATCH_COUNT = 10
-QTD_PONTOS_CHAVE = 2000
-DISTANCE_THRESHOLD = 0.57
-PROPORCAO_IMAGENS = 0.2
-MAX_IMAGE_SIZE_SELECTOR = 500
-MAX_IMAGE_SIZE_MOSAICOS = 900
+MIN_MATCH_COUNT_DEFAULT = 10
+NFEATURES_DEFAULT = 2000
+DISTANCE_THRESHOLD_DEFAULT = 0.57
+
+# filtra matches distintos o suficiente
+distanceThreshold = DISTANCE_THRESHOLD_DEFAULT
+filtraLMatches = lambda matches : [m for m,n in matches if m.distance < distanceThreshold * n.distance]
 
 class Foto:
-    def __init__(self, caminhoImg, nome, nfeatures = QTD_PONTOS_CHAVE):
+    def __init__(self, caminhoImg, nome, nfeatures = NFEATURES_DEFAULT):
         self.nome = nome
         self.imagem = cv2.imread(caminhoImg) # carrega a imagem
         orb = cv2.ORB_create(nfeatures = nfeatures)
@@ -23,36 +21,33 @@ class Foto:
         deslocMaskY = round(self.tamanho[0]*0.075)
         # gera a mascara
         mask = cv2.rectangle(np.zeros(self.tamanho, dtype='uint8'),(deslocMaskX,deslocMaskY),(self.tamanho[1]-deslocMaskX,self.tamanho[0]-deslocMaskY),255,-1)
-        self.kpCentral, self.dcCentral = orb.detectAndCompute(self.imagem, mask) 
+        self.kpCentral, self.dcCentral = orb.detectAndCompute(self.imagem, mask)
         # calcula os pontos chave e descritores da regiao central
-        self.kpTotal, self.dcTotal = orb.detectAndCompute(self.imagem, None)     
+        self.kpTotal, self.dcTotal = orb.detectAndCompute(self.imagem, None)
         # e da regiao total
 
     def exibeImagemKP(self, proporcao = 0.4): # exibe a imagem com seus pontos chave
         imagem = cv2.drawKeypoints(self.imagem, self.kpCentral, None, (255, 0, 255))
-        cv2.imshow(self.nome, cv2.resize(imagem,(0,0),None,proporcao,proporcao)) 
+        cv2.imshow(self.nome, cv2.resize(imagem,(0,0),None,proporcao,proporcao))
         return imagem
 
-# filtra matches distintos o suficiente
-filtraLMatches = lambda matches : [m for m,n in matches if m.distance < DISTANCE_THRESHOLD * n.distance] 
-
-def encontraMatches(img1, img2):
+def encontraMatches(img1, img2, minMatchCount = MIN_MATCH_COUNT_DEFAULT):
     # funcao baseada nos procedimentos descritos por datahacker.rs
 
-    bf = cv2.BFMatcher_create(cv2.NORM_HAMMING) 
-    
+    bf = cv2.BFMatcher_create(cv2.NORM_HAMMING)
+
     # utilizando apenas pontos chave da regiao central
     # encontra os 2 matches de img2 mais proximos de cada ponto chave de img1
-    matchesCentral = bf.knnMatch(img1.dcCentral, img2.dcCentral, k=2) 
+    matchesCentral = bf.knnMatch(img1.dcCentral, img2.dcCentral, k=2)
     # filtra apenas os matches com determinada distincao entre o mais proximo e segundo mais proximo
-    goodCentral = filtraLMatches(matchesCentral) 
-    if (len(goodCentral) > MIN_MATCH_COUNT):
+    goodCentral = filtraLMatches(matchesCentral)
+    if (len(goodCentral) > minMatchCount):
         return 0, goodCentral
 
     # repete o processo para pontos chave da regiao total da imagem
     matchesTotal = bf.knnMatch(img1.dcTotal, img2.dcTotal, k=2)
     goodTotal = filtraLMatches(matchesTotal)
-    if (len(goodTotal) > MIN_MATCH_COUNT):
+    if (len(goodTotal) > minMatchCount):
         return 1, goodTotal
 
     return -1, None
@@ -63,7 +58,7 @@ def encontraOrdem(lista, _naoVisitados = None):
         naoVisitados = [*range(len(lista))]
     else:
         naoVisitados = _naoVisitados
-    
+
     visitados = []
     visitados.append(naoVisitados.pop(0)) # a primeira imagem da lista eh visitada automaticamente
     ordem = []
@@ -75,7 +70,7 @@ def encontraOrdem(lista, _naoVisitados = None):
             if(regiao >= 0):
                 ordem.append((visitado, naoVisitados[0], regiao, matches))
                 visitados.append(naoVisitados.pop(0))
-    
+
     # o segundo laco compara todas as imagens nao visitadas com aquelas que foram adicionadas ao mosaico
     ocorreuAdicao = True
     while(ocorreuAdicao):
@@ -83,14 +78,14 @@ def encontraOrdem(lista, _naoVisitados = None):
         for naoVisitado in naoVisitados:
             for visitado in reversed(visitados):
                 regiao, matches = encontraMatches(lista[naoVisitado], lista[visitado])
-                if(regiao >= 0): 
+                if(regiao >= 0):
                     # toda vez que uma area de sobreposicao aceitavel eh encontrada
                     # o par de imagens eh armazenado juntamente com a lista de correspondencias de pontos chave
-                    ordem.append((visitado, naoVisitado, regiao, matches)) 
+                    ordem.append((visitado, naoVisitado, regiao, matches))
                     visitados.append(naoVisitados.pop(naoVisitados.index(naoVisitado)))
                     ocorreuAdicao = True
                     break
-    
+
     print("Restam ", len(naoVisitados), "imagens")
     resultado = []
     if (len(ordem) > 0):
@@ -117,10 +112,9 @@ def retornaPontosCoincidentes(img1, img2, regiao, matches):
 
     return pontos1, pontos2
 
-def calculaMatrizH(kp1, kp2): 
+def calculaMatrizH(kp1, kp2):
     # funcao baseada nos procedimentos descritos por datahacker.rs
 
-    # recebe os pontos chave correspondentes e cria a matriz de transformacao
     src_pts = np.float32([ kp1[x].pt for x in range(len(kp1))]).reshape(-1,1,2)
     dst_pts = np.float32([ kp2[x].pt for x in range(len(kp2))]).reshape(-1,1,2)
     H, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
@@ -145,7 +139,7 @@ def mergeImages(imgList, ordem, indice): # cria um mosaico
     rows, cols = imgList[ordem[0][0]].tamanho
     limitesAtuais = [] # armazena os limites iniciais de cada imagem
     limitesFinais = [] # armazena os limites de cada imagem apos as tranformacoes
-    # armazena as informacoes da primeira imagem
+    
     limitesAtuais.append(np.float32([[0,0], [0, rows],[cols, rows], [cols, 0]]).reshape(-1, 1, 2))
     limitesFinais.append(limitesAtuais[0])
 
@@ -153,14 +147,12 @@ def mergeImages(imgList, ordem, indice): # cria um mosaico
         rows, cols = imgList[ordem[i][1]].tamanho
         limitesAtuais.append(np.float32([[0,0], [0, rows],[cols, rows], [cols, 0]]).reshape(-1, 1, 2))
         pontos1, pontos2 = retornaPontosCoincidentes(imgList[ordem[i][1]], imgList[ordem[i][0]], ordem[i][2], ordem[i][3])
-        # matriz de tranformacao eh armazenada em i+1 pois o indice 0 eh referente a primeira imagem (refrencia)
         hList[i+1] = calculaMatrizH(pontos1, pontos2)
         # cada matriz eh multiplicada pela matriz da imagem anterior, para manter uma unica perspectiva
         hList[i+1] = hList[encontraIndiceLocal(ordem[i][0])].dot(hList[i+1])
         limitesFinais.append(cv2.perspectiveTransform(limitesAtuais[i+1], hList[i+1]))
 
-    # confere caso o usuario tenha escolhido a imagem de referencia
-    if indice < 0: 
+    if indice < 0:
         # descobre a imagem central a partir da posicao em x
         avg_x = np.mean([[x[0][0][0],x[1][0][0],x[2][0][0],x[3][0][0]] for x in limitesFinais],1)
         idx = np.argsort(avg_x)
@@ -169,8 +161,7 @@ def mergeImages(imgList, ordem, indice): # cria um mosaico
     else:
         indiceMeio = indice
 
-    limitesFinais.clear() 
-    # apos a mudanca de imagem de referencia, os limites finais serao outros
+    limitesFinais.clear()
 
     inversa = np.linalg.inv(hList[indiceMeio])
     # altera a perspectiva do mosaico
@@ -184,7 +175,7 @@ def mergeImages(imgList, ordem, indice): # cria um mosaico
     [x_max, y_max] = np.int32(listaDePontos.max(axis=0).ravel() + 0.5)
 
     # translacao necessaria para que nenhuma imagem tenha posicoes negativas
-    translation_dist = [-x_min,-y_min] 
+    translation_dist = [-x_min,-y_min]
     H_translation = np.array([[1, 0, translation_dist[0]], [0, 1, translation_dist[1]], [0, 0, 1]])
     hList = [H_translation.dot(hList[x]) for x in range(len(hList))]
 
@@ -204,7 +195,6 @@ def mergeImages(imgList, ordem, indice): # cria um mosaico
     return panorama
 
 def criaMosaicos(fotos, ordens, indicesEscolhidos):
-    # gera um mosaico para cada ordem de imagens encontrada
     mosaicos = []
     for i in range(len(ordens)):
         print(f'Restam {len(ordens)-(i)} Mosaicos')
@@ -212,14 +202,12 @@ def criaMosaicos(fotos, ordens, indicesEscolhidos):
     return mosaicos
 
 def printaOrdens(ordens):
-    # exibe os indices de pares de imagens que serao conectados
     for ordem in ordens:
         for x in ordem:
             print(x[:3])
         print(" ")
 
 def descobreNomesOrdem(ordem, fotos):
-    # retorna os nomes das imagens utilizadas para determinado mosaico
     nomes = []
     nomes.append(fotos[ordem[0][0]].nome)
     for sequencia in ordem:
@@ -227,53 +215,8 @@ def descobreNomesOrdem(ordem, fotos):
     return nomes
 
 def is_image(nome):
-    # confere se um arquivo e referente a uma imagem
     return nome[-4:].lower() == ".png" or nome[-4:].lower() == ".jpg" or nome[-5:].lower() == ".jpeg"
 
 def filtraImagens(photosNames):
-    # retorna apenas os arquivos referentes a imagens
     return list(filter(is_image, photosNames))
-
-
-if __name__ == "__main__":
-
-    # inicializa variaveis
-    folderPath = "./fotos"
-    photosPaths=[]
-    fotos = []
-
-    print("Carregando...")
-    photosNames = os.listdir(folderPath)
-    print(photosNames)
-    photosNames = filtraImagens(photosNames)
-
-    for name in photosNames:
-        imagem = Foto(f'{folderPath}/{name}', name)
-        photosPaths.append(f'{folderPath}/{name}')
-        fotos.append(imagem)
-
-
-    print("Fotos carregadas, procurando ordenação...")
-
-    # atualiza o diretorio inicial das janelas de selecao
-    diretorio = folderPath
-
-    ordens = encontraOrdem(fotos)
-    indicesEscolhidos = [-1 for _ in ordens]
-
-    print("Gerando Mosaicos...")
-
-    mosaicos = criaMosaicos(fotos, ordens, indicesEscolhidos)
-
-    for i in range(len(mosaicos)):
-        x = datetime.datetime.now()
-        caminho = f'./fotos/{x.strftime("%d%m%Y_%H%M%S")}_{i}'
-        os.makedirs(caminho)
-        cv2.imwrite(caminho+"/mosaico.png", mosaicos[i])
-        texto = []
-        texto.append(f'O arquivo "mosaico.png" foi confeccionado utilizando as seguintes imagens:\n')
-        texto = texto + [nome+'\n' for nome in descobreNomesOrdem(ordens[i], fotos)]
-        # o arquivo de texto contem os nomes das imagens utilizadas no mosaico
-        with open(caminho+"/imagens_utilizadas.txt", 'w') as arquivoTxt:
-            arquivoTxt.writelines(texto)
-
+    
