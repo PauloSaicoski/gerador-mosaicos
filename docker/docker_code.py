@@ -17,9 +17,7 @@ if __name__ == "__main__":
     photosPaths=[]
     fotos = []
 
-    print("Carregando...")
     photosNames = os.listdir(folderPath)
-    print(photosNames)
     photosNames = mg.filtraImagens(photosNames)
 
     for name in photosNames:
@@ -28,15 +26,11 @@ if __name__ == "__main__":
         fotos.append(imagem)
 
 
-    print("Fotos carregadas, procurando ordenação...")
-
     # atualiza o diretorio inicial das janelas de selecao
     diretorio = folderPath
 
     ordens = mg.encontraOrdem(fotos)
     indicesEscolhidos = [-1 for _ in ordens]
-
-    print("Gerando Mosaicos...")
 
     mosaicos = mg.criaMosaicos(fotos, ordens, indicesEscolhidos)
 
