@@ -2,12 +2,10 @@
 import datetime
 import cv2
 import os
+import sys
 
+sys.path.insert(1, '../')
 import mosaic_generator as mg
-
-PROPORCAO_IMAGENS = 0.2
-MAX_IMAGE_SIZE_SELECTOR = 500
-MAX_IMAGE_SIZE_MOSAICOS = 900
 
 
 if __name__ == "__main__":
